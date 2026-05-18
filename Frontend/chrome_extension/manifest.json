@@ -7,8 +7,7 @@
     "activeTab",
     "storage",
     "scripting",
-    "tabs",
-    "identity"
+    "tabs"
   ],
   "host_permissions": [
     "http://localhost/*",
@@ -42,9 +41,9 @@
     "128": "icons/book_icon.png"
   },
   "sandbox": {
-    "pages": ["spotify_sandbox.html"]
+    "pages": ["youtube_sandbox.html"]
   },
   "content_security_policy": {
-    "sandbox": "sandbox allow-scripts; script-src 'self' https://sdk.scdn.co; connect-src https://*.spotify.com https://*.scdn.co"
+    "sandbox": "sandbox allow-scripts; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube.com"
   }
 }

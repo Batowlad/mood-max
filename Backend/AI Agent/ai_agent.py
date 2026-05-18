@@ -65,8 +65,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 llm = None
 if OPENAI_API_KEY:
     llm = ChatOpenAI(
-        model="gpt-4o", 
-        temperature=0.3, 
+        model="gpt-4o",
+        temperature=0.3,
         api_key=OPENAI_API_KEY
     )
 else:
@@ -85,6 +85,7 @@ class MusicRecommendation(BaseModel):
     title: str
     artist: str
     match_reason: str
+    search_query: str
 
 class MusicRecommendations(BaseModel):
     recommendations: List[MusicRecommendation]
@@ -176,25 +177,26 @@ Output:
 """
 
 
-MUSIC_SELECTOR_PROMPT = """You are an AI assistant that recommends music tracks or playlists based on thematic and emotional descriptors.
+MUSIC_SELECTOR_PROMPT = """You are an AI assistant that recommends music tracks based on thematic and emotional descriptors. The tracks will be played by searching YouTube, so each recommendation must include a search query optimized for finding the song on YouTube.
 
 Input JSON:
 {tagged_result}
 
 Task:
 1. Interpret the "tags" and "embedding_description".
-2. Select or generate a list of 3–5 recommended songs or playlists that best match the theme and mood.
-   - Each item must include: "title", "artist" (if known), and "match_reason".
-   - If specific tracks are not available in the database, describe the type of music instead (e.g., "epic orchestral soundtrack with heavy percussion").
-3. Ensure the style of music aligns strongly with the input descriptors.
-4. Output strictly in JSON format with this schema:
+2. Select a list of 3-5 recommended songs that best match the theme and mood.
+   - Prefer real, well-known tracks that are likely to exist on YouTube.
+   - Each item must include: "title", "artist", "match_reason", and "search_query".
+   - "search_query" should be a YouTube-friendly search string. Include the word "official" or "official audio" to bias toward the original recording instead of covers or lyric videos. Example: "Two Steps From Hell Dragon Rider official audio".
+3. Output strictly in JSON format with this schema:
 
 {{
   "recommendations": [
     {{
       "title": "string",
-      "artist": "string or 'unknown'",
-      "match_reason": "string"
+      "artist": "string",
+      "match_reason": "string",
+      "search_query": "string"
     }},
     ...
   ]
@@ -216,66 +218,18 @@ Output:
     {{
       "title": "The Battle",
       "artist": "Harry Gregson-Williams",
-      "match_reason": "Epic orchestral track with dramatic and intense mood, matching fantasy adventure theme."
+      "match_reason": "Epic orchestral track with dramatic and intense mood, matching fantasy adventure theme.",
+      "search_query": "Harry Gregson-Williams The Battle Narnia official audio"
     }},
     {{
       "title": "Dragon Rider",
       "artist": "Two Steps From Hell",
-      "match_reason": "Epic trailer-style music with dramatic intensity fitting a fantasy adventure."
-    }},
-    {{
-      "title": "Fantasy Adventure Soundtrack Mix",
-      "artist": "unknown",
-      "match_reason": "Curated orchestral mix with heroic and dramatic tones for fantasy settings."
+      "match_reason": "Epic trailer-style music with dramatic intensity fitting a fantasy adventure.",
+      "search_query": "Two Steps From Hell Dragon Rider official"
     }}
   ]
 }}
 """
-
-
-# Spotify API integration
-try:
-    import spotipy
-    from spotipy.oauth2 import SpotifyClientCredentials
-    
-    SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-    SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
-    
-    if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
-        client_credentials_manager = SpotifyClientCredentials(
-            client_id=SPOTIFY_CLIENT_ID,
-            client_secret=SPOTIFY_CLIENT_SECRET
-        )
-        spotify = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
-    else:
-        spotify = None
-        print("Warning: Spotify credentials not found. Music search will use AI recommendations only.", file=sys.stderr)
-except ImportError:
-    spotify = None
-    print("Warning: spotipy not installed. Install with: pip install spotipy", file=sys.stderr)
-
-
-def search_spotify_tracks(query: str, limit: int = 5) -> List[Dict[str, Any]]:
-    """Search for tracks on Spotify based on a query string."""
-    if not spotify:
-        return []
-    
-    try:
-        results = spotify.search(q=query, type='track', limit=limit)
-        tracks = []
-        for item in results['tracks']['items']:
-            tracks.append({
-                'title': item['name'],
-                'artist': ', '.join([artist['name'] for artist in item['artists']]),
-                'spotify_id': item['id'],
-                'spotify_url': item['external_urls']['spotify'],
-                'preview_url': item.get('preview_url'),
-                'album': item['album']['name']
-            })
-        return tracks
-    except Exception as e:
-        print(f"Error searching Spotify: {e}", file=sys.stderr)
-        return []
 
 
 # LangGraph node functions
@@ -284,17 +238,17 @@ def content_analyzer_node(state: AgentState) -> Dict[str, Any]:
     content = state.get('page_content', '')
     if not content:
         return {"analysis_result": {"theme": "unknown", "mood": []}}
-    
+
     prompt = CONTENT_ANALYZER_PROMPT.format(page_content=content)
-    
+
     messages = [
         SystemMessage(content="You are a helpful assistant that analyzes text and returns JSON."),
         HumanMessage(content=prompt)
     ]
-    
+
     # Use structured output to get JSON response
     result = llm.with_structured_output(AnalysisResult).invoke(messages)
-    
+
     return {
         "analysis_result": {
             "theme": result.theme,
@@ -308,19 +262,19 @@ def tag_node(state: AgentState) -> Dict[str, Any]:
     analysis = state.get('analysis_result')
     if not analysis:
         return {"tagged_result": {"tags": [], "embedding_description": ""}}
-    
+
     # Convert analysis to JSON string for the prompt
     analysis_json = json.dumps(analysis, indent=2)
     prompt = EMBEDDING_TAGGING_PROMPT.format(analysis_result=analysis_json)
-    
+
     messages = [
         SystemMessage(content="You are a helpful assistant that converts analysis into tags and returns JSON."),
         HumanMessage(content=prompt)
     ]
-    
+
     # Use structured output to get JSON response
     result = llm.with_structured_output(TaggedResult).invoke(messages)
-    
+
     return {
         "tagged_result": {
             "tags": result.tags,
@@ -330,74 +284,32 @@ def tag_node(state: AgentState) -> Dict[str, Any]:
 
 
 def music_selector_node(state: AgentState) -> Dict[str, Any]:
-    """Search for music recommendations based on tags and embedding description."""
+    """Generate music recommendations with YouTube-ready search queries."""
     tagged = state.get('tagged_result')
     if not tagged:
         return {"music_recommendations": {"recommendations": []}}
-    
-    # Convert tagged result to JSON string for the prompt
+
     tagged_json = json.dumps(tagged, indent=2)
     prompt = MUSIC_SELECTOR_PROMPT.format(tagged_result=tagged_json)
-    
+
     messages = [
         SystemMessage(content="You are a helpful assistant that recommends music and returns JSON."),
         HumanMessage(content=prompt)
     ]
-    
-    # Get AI recommendations
-    ai_recommendations = llm.with_structured_output(MusicRecommendations).invoke(messages)
-    
-    # Try to find actual Spotify tracks for the recommendations
-    recommendations = []
-    for rec in ai_recommendations.recommendations:
-        # Search Spotify using the title and artist
-        search_query = f"{rec.title} {rec.artist}"
-        spotify_results = search_spotify_tracks(search_query, limit=1)
-        
-        if spotify_results:
-            # Use the Spotify result if found
-            spotify_track = spotify_results[0]
-            recommendations.append({
-                "title": spotify_track['title'],
-                "artist": spotify_track['artist'],
-                "match_reason": rec.match_reason,
-                "spotify_id": spotify_track.get('spotify_id'),
-                "spotify_url": spotify_track.get('spotify_url'),
-                "preview_url": spotify_track.get('preview_url'),
-                "album": spotify_track.get('album'),
-                "source": "spotify"
-            })
-        else:
-            # Fall back to AI recommendation
-            recommendations.append({
-                "title": rec.title,
-                "artist": rec.artist,
-                "match_reason": rec.match_reason,
-                "source": "ai_recommendation"
-            })
-    
-    # If no Spotify results, try searching with tags
-    if not any(r.get('source') == 'spotify' for r in recommendations) and tagged.get('tags'):
-        # Try searching with tags
-        tag_query = ' '.join(tagged['tags'][:3])  # Use first 3 tags
-        spotify_results = search_spotify_tracks(tag_query, limit=5)
-        
-        if spotify_results:
-            # Replace recommendations with Spotify results
-            recommendations = []
-            for track in spotify_results:
-                recommendations.append({
-                    "title": track['title'],
-                    "artist": track['artist'],
-                    "match_reason": f"Found on Spotify matching tags: {', '.join(tagged['tags'])}",
-                    "spotify_id": track.get('spotify_id'),
-                    "spotify_url": track.get('spotify_url'),
-                    "preview_url": track.get('preview_url'),
-                    "album": track.get('album'),
-                    "source": "spotify"
-                })
 
-    
+    ai_recommendations = llm.with_structured_output(MusicRecommendations).invoke(messages)
+
+    recommendations = [
+        {
+            "title": rec.title,
+            "artist": rec.artist,
+            "match_reason": rec.match_reason,
+            "search_query": rec.search_query,
+            "source": "ai_recommendation"
+        }
+        for rec in ai_recommendations.recommendations
+    ]
+
     return {
         "music_recommendations": {
             "recommendations": recommendations
@@ -409,20 +321,20 @@ def music_selector_node(state: AgentState) -> Dict[str, Any]:
 def build_music_agent_graph():
     """Build and return the compiled LangGraph workflow."""
     builder = StateGraph(AgentState)
-    
+
     # Add nodes
     builder.add_node("content_analyzer", content_analyzer_node)
     builder.add_node("tag", tag_node)
     builder.add_node("music_selector", music_selector_node)
-    
+
     # Set entry point
     builder.set_entry_point("content_analyzer")
-    
+
     # Add edges
     builder.add_edge("content_analyzer", "tag")
     builder.add_edge("tag", "music_selector")
     builder.add_edge("music_selector", END)
-    
+
     # Compile the graph
     graph = builder.compile()
     return graph
@@ -435,27 +347,27 @@ music_agent_graph = build_music_agent_graph()
 def run_music_agent(content: Optional[str] = None) -> Dict[str, Any]:
     """
     Run the music agent workflow with the given content or page_content.
-    
+
     Args:
         content: Optional content to analyze. If None, uses page_content.
-    
+
     Returns:
         Final state with all results including music recommendations.
     """
     input_content = content if content is not None else page_content
-    
+
     if not input_content:
         return {
             "error": "No content provided. Please provide content or ensure page_content is set."
         }
-    
+
     initial_state = {
         "page_content": input_content,
         "analysis_result": None,
         "tagged_result": None,
         "music_recommendations": None
     }
-    
+
     # Run the graph and collect all states
     final_state = initial_state.copy()
     for node_outputs in music_agent_graph.stream(initial_state):
@@ -463,7 +375,5 @@ def run_music_agent(content: Optional[str] = None) -> Dict[str, Any]:
         for node_name, node_state in node_outputs.items():
             print(f"Node '{node_name}' completed", file=sys.stderr)
             final_state.update(node_state)
-    
+
     return final_state
-
-

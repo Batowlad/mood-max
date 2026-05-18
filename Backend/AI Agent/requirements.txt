@@ -2,7 +2,6 @@ langchain-openai==0.2.3
 langchain-core==0.3.54
 langgraph==0.3.31
 python-dotenv==1.0.1
-spotipy==2.23.0
 pydantic==2.9.2
 urllib3==1.26.20
 selenium==4.27.1

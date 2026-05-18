@@ -4,13 +4,13 @@
     <meta charset="utf-8">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@700&family=Space+Mono:wght@400;700&display=swap');
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             width: 350px;
             font-family: 'Space Mono', monospace;
@@ -18,12 +18,12 @@
             color: #000000;
             margin: 0;
         }
-        
+
         .container {
             padding: 0;
             background: #ffffff;
         }
-        
+
         .header {
             margin-bottom: 0;
             padding: 20px;
@@ -32,7 +32,7 @@
             border: 4px solid #000000;
             box-shadow: 8px 8px 0 0 #ff006e;
         }
-        
+
         h1 {
             font-family: 'Space Grotesk', sans-serif;
             font-size: 24px;
@@ -42,7 +42,7 @@
             text-transform: uppercase;
             letter-spacing: 2px;
         }
-        
+
         .subtitle {
             font-size: 11px;
             color: #00f0ff;
@@ -50,7 +50,7 @@
             text-transform: uppercase;
             letter-spacing: 1px;
         }
-        
+
         .status {
             background: #ffd60a;
             padding: 16px;
@@ -63,7 +63,7 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
+
         .button {
             background: #00f0ff;
             border: 4px solid #000000;
@@ -81,32 +81,32 @@
             box-shadow: 6px 6px 0 0 #000000;
             position: relative;
         }
-        
+
         .button:hover {
             background: #ff006e;
             color: #ffffff;
             transform: translate(2px, 2px);
             box-shadow: 4px 4px 0 0 #000000;
         }
-        
+
         .button:active {
             transform: translate(6px, 6px);
             box-shadow: 0px 0px 0 0 #000000;
         }
-        
+
         .button:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
             box-shadow: 6px 6px 0 0 #000000;
         }
-        
+
         .button:disabled:hover {
             background: #00f0ff;
             color: #000000;
             transform: none;
         }
-        
+
         .settings {
             margin: 20px;
             padding: 16px;
@@ -114,7 +114,7 @@
             background: #ffffff;
             box-shadow: 6px 6px 0 0 #000000;
         }
-        
+
         .setting-item {
             display: flex;
             justify-content: space-between;
@@ -125,7 +125,7 @@
             color: #000000;
             text-transform: uppercase;
         }
-        
+
         .toggle {
             position: relative;
             width: 50px;
@@ -135,11 +135,11 @@
             cursor: pointer;
             transition: all 0.1s ease;
         }
-        
+
         .toggle.active {
             background: #7bf1a8;
         }
-        
+
         .toggle::after {
             content: '';
             position: absolute;
@@ -150,11 +150,11 @@
             left: 2px;
             transition: transform 0.1s ease;
         }
-        
+
         .toggle.active::after {
             transform: translateX(22px);
         }
-        
+
         .status-indicator {
             font-size: 11px;
             padding: 6px 12px;
@@ -162,24 +162,24 @@
             border: 3px solid #000000;
             text-transform: uppercase;
         }
-        
+
         .status-indicator.connected {
             background: #7bf1a8;
             color: #000000;
         }
-        
+
         .status-indicator.disconnected {
             background: #ff006e;
             color: #ffffff;
         }
-        
+
         .player-section {
             margin: 20px;
             border: 4px solid #000000;
             background: #ffffff;
             box-shadow: 6px 6px 0 0 #000000;
         }
-        
+
         .player-header {
             display: flex;
             justify-content: space-between;
@@ -189,14 +189,14 @@
             color: #ffffff;
             border-bottom: 4px solid #000000;
         }
-        
+
         .player-title {
             font-size: 12px;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 1px;
         }
-        
+
         .player-status {
             font-size: 10px;
             font-weight: 700;
@@ -206,31 +206,27 @@
             background: #ffd60a;
             color: #000000;
         }
-        
+
         .player-status.ready {
             background: #7bf1a8;
         }
-        
+
         .player-status.error {
             background: #ff006e;
             color: #ffffff;
         }
-        
-        .player-content {
-            padding: 16px;
-        }
-        
+
         .player-controls {
             padding: 16px;
         }
-        
+
         .track-info {
             margin-bottom: 16px;
             padding: 12px;
             background: #f8f8f8;
             border: 3px solid #000000;
         }
-        
+
         .track-name {
             font-size: 13px;
             font-weight: 700;
@@ -239,20 +235,20 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
+
         .track-artist {
             font-size: 11px;
             color: #666666;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-        
+
         .control-buttons {
             display: flex;
             gap: 12px;
             justify-content: center;
         }
-        
+
         .control-btn {
             background: #00f0ff;
             border: 3px solid #000000;
@@ -269,25 +265,25 @@
             transition: all 0.1s ease;
             box-shadow: 4px 4px 0 0 #000000;
         }
-        
+
         .control-btn:hover:not(:disabled) {
             background: #ff006e;
             color: #ffffff;
             transform: translate(2px, 2px);
             box-shadow: 2px 2px 0 0 #000000;
         }
-        
+
         .control-btn:active:not(:disabled) {
             transform: translate(4px, 4px);
             box-shadow: 0px 0px 0 0 #000000;
         }
-        
+
         .control-btn:disabled {
             opacity: 0.5;
             cursor: not-allowed;
             transform: none;
         }
-        
+
         .hidden {
             display: none;
         }
@@ -299,14 +295,14 @@
             <h1>Superior Reading</h1>
             <div class="subtitle">Content Scraper</div>
         </div>
-        
+
         <div class="status" id="status">
             READY
         </div>
-        
+
         <button class="button" id="testBtn">Test Connection</button>
         <button class="button" id="playRecommendationsBtn">Play Recommendations</button>
-        
+
         <div class="settings">
             <div class="setting-item">
                 <span>Test Mode (Preset)</span>
@@ -321,36 +317,29 @@
                 <span class="status-indicator" id="serverStatus">Unknown</span>
             </div>
         </div>
-        
-        <!-- Spotify Player Section -->
+
         <div class="player-section" id="playerSection">
             <div class="player-header">
-                <span class="player-title">🎵 SPOTIFY PLAYER</span>
-                <span class="player-status" id="playerStatus">Not Connected</span>
+                <span class="player-title">🎵 PLAYER</span>
+                <span class="player-status" id="playerStatus">Initializing</span>
             </div>
-            
-            <div class="player-content" id="playerContent">
-                <button class="button" id="authButton">Connect to Spotify</button>
-            </div>
-            
-            <div class="player-controls hidden" id="playerControls">
+
+            <div class="player-controls" id="playerControls">
                 <div class="track-info" id="trackInfo">
                     <div class="track-name" id="trackName">No track playing</div>
                     <div class="track-artist" id="trackArtist"></div>
                 </div>
                 <div class="control-buttons">
-                    <button class="control-btn" id="prevBtn">⏮</button>
-                    <button class="control-btn" id="playPauseBtn">▶</button>
-                    <button class="control-btn" id="nextBtn">⏭</button>
+                    <button class="control-btn" id="prevBtn" disabled>⏮</button>
+                    <button class="control-btn" id="playPauseBtn" disabled>▶</button>
+                    <button class="control-btn" id="nextBtn" disabled>⏭</button>
                 </div>
             </div>
         </div>
     </div>
-    
-    <!-- Sandbox iframe for Spotify SDK (hidden) -->
-    <iframe id="sandboxFrame" style="display: none;" src="spotify_sandbox.html"></iframe>
-    
-    <script src="spotify_auth.js"></script>
+
+    <iframe id="sandboxFrame" style="display: none;" src="youtube_sandbox.html"></iframe>
+
     <script src="popup.js"></script>
 </body>
 </html>

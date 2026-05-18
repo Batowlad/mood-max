@@ -5,8 +5,71 @@ const path = require('path');
 const moment = require('moment');
 const { spawn } = require('child_process');
 
+// Load .env from Backend/AI Agent so the same key file feeds both Python and Node
+try {
+    require('dotenv').config({ path: path.join(__dirname, '..', 'AI Agent', '.env') });
+} catch (_) {
+    // dotenv is optional; env vars can be exported in the shell instead
+}
+
 const app = express();
 const PORT = 3000;
+
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
+const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
+const youtubeQueryCache = new Map();
+
+async function searchYouTube(query) {
+    if (!YOUTUBE_API_KEY) return null;
+    if (!query || !query.trim()) return null;
+
+    const cacheKey = query.trim().toLowerCase();
+    if (youtubeQueryCache.has(cacheKey)) {
+        return youtubeQueryCache.get(cacheKey);
+    }
+
+    const params = new URLSearchParams({
+        part: 'snippet',
+        q: query,
+        type: 'video',
+        videoEmbeddable: 'true',
+        maxResults: '1',
+        key: YOUTUBE_API_KEY
+    });
+
+    try {
+        const response = await fetch(`${YOUTUBE_SEARCH_URL}?${params.toString()}`);
+        if (!response.ok) {
+            const body = await response.text();
+            console.error(`YouTube search failed (${response.status}): ${body.substring(0, 200)}`);
+            return null;
+        }
+        const data = await response.json();
+        const videoId = data?.items?.[0]?.id?.videoId || null;
+        youtubeQueryCache.set(cacheKey, videoId);
+        return videoId;
+    } catch (error) {
+        console.error('YouTube search error:', error.message);
+        return null;
+    }
+}
+
+async function attachYouTubeIds(recommendations) {
+    if (!Array.isArray(recommendations) || recommendations.length === 0) return recommendations;
+    if (!YOUTUBE_API_KEY) {
+        console.warn('⚠️  YOUTUBE_API_KEY not set — recommendations returned without youtube_id. Playback will be skipped.');
+        return recommendations;
+    }
+
+    const enriched = await Promise.all(recommendations.map(async (rec) => {
+        if (rec.youtube_id) return rec;
+        const query = rec.search_query || `${rec.title || ''} ${rec.artist || ''}`.trim();
+        const videoId = await searchYouTube(query);
+        return videoId ? { ...rec, youtube_id: videoId } : rec;
+    }));
+
+    return enriched;
+}
 
 // Middleware
 app.use(cors());
@@ -344,6 +407,11 @@ app.get('/api/recommendations/latest', async (req, res) => {
             
             if (await fs.pathExists(presetFile)) {
                 const presetData = await fs.readJson(presetFile);
+                if (presetData?.music_recommendations?.recommendations) {
+                    presetData.music_recommendations.recommendations = await attachYouTubeIds(
+                        presetData.music_recommendations.recommendations
+                    );
+                }
                 console.log('✅ Serving preset recommendations (test mode)');
                 return res.json({
                     success: true,
@@ -471,7 +539,7 @@ app.get('/api/recommendations/latest', async (req, res) => {
             });
             
             // Handle process completion
-            pythonProcess.on('close', (code, signal) => {
+            pythonProcess.on('close', async (code, signal) => {
                 clearTimeout(timeout); // Clear the timeout
                 
                 if (code !== 0) {
@@ -508,19 +576,25 @@ app.get('/api/recommendations/latest', async (req, res) => {
                 try {
                     // Clean stdout - remove any leading/trailing whitespace and extract JSON
                     let cleanedStdout = stdout.trim();
-                    
+
                     // Try to find JSON object in the output (in case there's extra text)
                     // Look for the first { and last } to extract JSON
                     const firstBrace = cleanedStdout.indexOf('{');
                     const lastBrace = cleanedStdout.lastIndexOf('}');
-                    
+
                     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
                         cleanedStdout = cleanedStdout.substring(firstBrace, lastBrace + 1);
                     }
-                    
+
                     // Parse JSON response from Python
                     const result = JSON.parse(cleanedStdout);
-                    
+
+                    if (result?.music_recommendations?.recommendations) {
+                        result.music_recommendations.recommendations = await attachYouTubeIds(
+                            result.music_recommendations.recommendations
+                        );
+                    }
+
                     // Return the music_recommendations
                     console.log('✅ Successfully generated recommendations');
                     res.json({

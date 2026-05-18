@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Superior Reading - Spotify Player</title>
+    <title>Superior Reading - Player</title>
     <style>
         * {
             margin: 0;
@@ -47,21 +47,9 @@
             font-weight: 500;
         }
 
-        .status.authenticating {
-            background: rgba(255, 193, 7, 0.2);
-        }
-
-        .status.ready {
-            background: rgba(76, 175, 80, 0.2);
-        }
-
-        .status.error {
-            background: rgba(244, 67, 54, 0.2);
-        }
-
-        .status.loading {
-            background: rgba(33, 150, 243, 0.2);
-        }
+        .status.ready { background: rgba(76, 175, 80, 0.2); }
+        .status.error { background: rgba(244, 67, 54, 0.2); }
+        .status.loading { background: rgba(33, 150, 243, 0.2); }
 
         .player-info {
             margin-top: 20px;
@@ -70,19 +58,9 @@
             border-radius: 10px;
         }
 
-        .track-info {
-            margin-top: 15px;
-        }
-
-        .track-info h3 {
-            font-size: 18px;
-            margin-bottom: 5px;
-        }
-
-        .track-info p {
-            font-size: 14px;
-            opacity: 0.8;
-        }
+        .track-info { margin-top: 15px; }
+        .track-info h3 { font-size: 18px; margin-bottom: 5px; }
+        .track-info p { font-size: 14px; opacity: 0.8; }
 
         .controls {
             display: flex;
@@ -113,42 +91,30 @@
             cursor: not-allowed;
         }
 
-        .auth-button {
-            background: #1db954;
-            width: 100%;
-            padding: 15px;
-            font-size: 16px;
-        }
+        .hidden { display: none; }
 
-        .auth-button:hover:not(:disabled) {
-            background: #1ed760;
-        }
-
-        .hidden {
-            display: none;
-        }
-
+        /* Hide the YouTube player iframe — audio only. */
         #sandboxFrame {
-            display: none;
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            border: 0;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>🎵 Superior Reading Player</h1>
-        
-        <div id="status" class="status loading">Initializing...</div>
-        
-        <div id="authSection" class="hidden">
-            <button id="authButton" class="auth-button">Connect to Spotify</button>
-        </div>
 
-        <div id="playerSection" class="hidden">
+        <div id="status" class="status loading">Initializing...</div>
+
+        <div id="playerSection">
             <div class="player-info">
-                <div id="deviceInfo">Device: Not ready</div>
-                <div class="track-info" id="trackInfo"></div>
+                <div class="track-info" id="trackInfo"><p>No track playing</p></div>
             </div>
-            
+
             <div class="controls">
                 <button id="playPauseBtn" disabled>Play</button>
                 <button id="nextBtn" disabled>Next</button>
@@ -157,11 +123,8 @@
         </div>
     </div>
 
-    <!-- Sandbox iframe for Spotify SDK -->
-    <iframe id="sandboxFrame" src="spotify_sandbox.html"></iframe>
+    <iframe id="sandboxFrame" src="youtube_sandbox.html"></iframe>
 
-    <!-- Scripts -->
-    <script src="spotify_auth.js"></script>
     <script src="player.js"></script>
 </body>
 </html>

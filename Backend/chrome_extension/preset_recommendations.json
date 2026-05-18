@@ -5,53 +5,32 @@
         "title": "Bohemian Rhapsody",
         "artist": "Queen",
         "match_reason": "Epic and dramatic rock anthem with emotional depth, perfect for intense reading moments.",
-        "spotify_id": "4u7EnebtmKWgUHutt87dm5",
-        "spotify_url": "https://open.spotify.com/track/4u7EnebtmKWgUHutt87dm5",
-        "preview_url": null,
-        "album": "A Night At The Opera",
-        "source": "spotify"
+        "search_query": "Queen Bohemian Rhapsody official"
       },
       {
         "title": "Stairway to Heaven",
         "artist": "Led Zeppelin",
         "match_reason": "Progressive rock masterpiece with building intensity, ideal for immersive reading experiences.",
-        "spotify_id": "5CQ30WqJwcep0pYcV4AMNc",
-        "spotify_url": "https://open.spotify.com/track/5CQ30WqJwcep0pYcV4AMNc",
-        "preview_url": null,
-        "album": "Led Zeppelin IV",
-        "source": "spotify"
+        "search_query": "Led Zeppelin Stairway to Heaven official"
       },
       {
         "title": "Hotel California",
         "artist": "Eagles",
         "match_reason": "Atmospheric and mysterious rock classic that enhances focus and concentration.",
-        "spotify_id": "40riOy7x9W7GXjyGp4pjAv",
-        "spotify_url": "https://open.spotify.com/track/40riOy7x9W7GXjyGp4pjAv",
-        "preview_url": null,
-        "album": "Hotel California",
-        "source": "spotify"
+        "search_query": "Eagles Hotel California official"
       },
       {
         "title": "Comfortably Numb",
         "artist": "Pink Floyd",
         "match_reason": "Ambient and contemplative progressive rock, perfect for deep reading sessions.",
-        "spotify_id": "5hUY48JzVa1xX87QTOdCvN",
-        "spotify_url": "https://open.spotify.com/track/5hUY48JzVa1xX87QTOdCvN",
-        "preview_url": null,
-        "album": "The Wall",
-        "source": "spotify"
+        "search_query": "Pink Floyd Comfortably Numb official"
       },
       {
         "title": "The Sound of Silence",
         "artist": "Simon & Garfunkel",
         "match_reason": "Peaceful and introspective folk rock that creates a calm reading atmosphere.",
-        "spotify_id": "2icgw0i2z7k4F7FJVOK1tY",
-        "spotify_url": "https://open.spotify.com/track/2icgw0i2z7k4F7FJVOK1tY",
-        "preview_url": null,
-        "album": "Sounds of Silence",
-        "source": "spotify"
+        "search_query": "Simon and Garfunkel The Sound of Silence official"
       }
     ]
   }
 }
-

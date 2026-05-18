@@ -1,6 +1,6 @@
 # Superior Reading - Chrome Extension
 
-A powerful Chrome extension that automatically scrapes main content from web pages, analyzes it with AI, and provides personalized Spotify music recommendations. The extension seamlessly extracts article content, sends it to your local backend server, and uses AI to generate music recommendations based on the content's theme and mood. With full Spotify Premium integration, you can instantly play recommended tracks directly from the extension's built-in player.
+A Chrome extension that automatically scrapes the main content of any web page, analyzes it with AI, and plays matching background music via YouTube — audio only, no video, no sign-in required for end users. The extension extracts the article, sends it to your local backend, uses AI to generate music recommendations based on theme and mood, then resolves each recommendation to a YouTube video and plays it through a hidden iframe in the extension popup.
 
 ## Features
 
@@ -11,7 +11,7 @@ A powerful Chrome extension that automatically scrapes main content from web pag
 - 📊 **Content Analytics**: Tracks word count, domain, and scraping statistics
 - 💾 **Local Storage**: Saves all scraped content to your PC
 - 🎨 **Modern UI**: Clean and intuitive popup interface
-- 🎵 **Spotify Integration**: AI-powered music recommendations based on scraped content with Spotify Premium playback
+- 🎵 **YouTube Audio Playback**: AI picks tracks, the backend resolves them via the YouTube Data API, and audio plays through a hidden player — no Spotify Premium, no per-user OAuth setup
 
 ## Getting Started
 
@@ -30,23 +30,27 @@ cd Superior-Reading
 Superior Reading/
 ├── Frontend/
 │   └── chrome_extension/
-│       ├── manifest.json          # Extension manifest
-│       ├── content.js             # Content scraping script
-│       ├── background.js          # Background service worker
-│       ├── popup.html             # Extension popup UI
-│       ├── popup.js               # Popup functionality
+│       ├── manifest.json              # Extension manifest
+│       ├── content.js                 # Content scraping script
+│       ├── background.js              # Background service worker
+│       ├── popup.html                 # Extension popup UI
+│       ├── popup.js                   # Popup functionality
+│       ├── player.html                # Standalone player page
+│       ├── player.js                  # Standalone player logic
+│       ├── youtube_sandbox.html       # Sandboxed YouTube IFrame Player host
+│       ├── youtube_sandbox.js         # YouTube IFrame Player wiring
 │       └── icons/
-│           └── book_icon.png      # Extension icons
+│           └── book_icon.png          # Extension icons
 ├── Backend/
 │   ├── chrome_extension/
-│   │   ├── package.json           # Node.js dependencies
-│   │   ├── server.js              # Express server
+│   │   ├── package.json               # Node.js dependencies
+│   │   ├── server.js                  # Express server + YouTube Data API proxy
 │   │   ├── preset_recommendations.json  # Preset music recommendations for testing
-│   │   └── scraped_data/          # Directory for saved content (auto-created)
+│   │   └── scraped_data/              # Directory for saved content (auto-created)
 │   └── AI Agent/
-│       ├── ai_agent.py            # AI agent for content analysis
-│       ├── run_agent_cli.py       # CLI interface for AI agent
-│       └── requirements.txt       # Python dependencies
+│       ├── ai_agent.py                # AI agent for content analysis
+│       ├── run_agent_cli.py           # CLI interface for AI agent
+│       └── requirements.txt           # Python dependencies
 └── README.md
 ```
 
@@ -70,32 +74,21 @@ Before setting up the application, you'll need to obtain the following API keys 
   - Or create a `.env` file in the `Backend/AI Agent/` directory with: `OPENAI_API_KEY=your-key-here`
 - **Usage**: Used by `ai_agent.py` for analyzing scraped content and generating music recommendations
 
-#### Spotify Client ID (OAuth)
+#### YouTube Data API Key
 
-- **Purpose**: Required for Spotify Premium playback integration
-- **How to obtain**: See detailed instructions in the [Setting Up Spotify Developer App](#setting-up-spotify-developer-app) section below
-- **Where to set**: Update `Frontend/chrome_extension/spotify_auth.js` (line 7) with your Client ID
-- **Additional requirement**: You must have a Spotify Premium subscription to use the Web Playback SDK
-- **Usage**: OAuth authentication for Spotify Web Playback SDK
-
-### Optional API Keys
-
-#### Spotify Client ID and Client Secret (for AI Agent)
-
-- **Purpose**: Optional, enables enhanced Spotify track search in the AI agent
-- **How to obtain**: 
-  1. Create a Spotify app at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) (same app used for OAuth)
-  2. After creating the app, you'll see both Client ID and Client Secret
-  3. Copy both values
-- **Where to set**: 
-  - Set as environment variables: 
-    - `export SPOTIFY_CLIENT_ID='your-client-id'`
-    - `export SPOTIFY_CLIENT_SECRET='your-client-secret'`
-  - Or add to `.env` file in `Backend/AI Agent/` directory:
-    - `SPOTIFY_CLIENT_ID=your-client-id`
-    - `SPOTIFY_CLIENT_SECRET=your-client-secret`
-- **Usage**: Used by `ai_agent.py` for direct Spotify API searches to find matching tracks
-- **Note**: If not set, AI recommendations will still work but without direct Spotify track matching. The extension will rely on AI-generated recommendations without searching Spotify's catalog.
+- **Purpose**: Required for resolving AI recommendations to playable YouTube videos
+- **How to obtain**:
+  1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+  2. Create (or select) a project
+  3. Enable the **YouTube Data API v3** under "APIs & Services → Library"
+  4. Create an API key under "APIs & Services → Credentials → Create credentials → API key"
+  5. (Optional but recommended) Restrict the key to the YouTube Data API v3
+- **Where to set**:
+  - Add to `.env` file in `Backend/AI Agent/` directory: `YOUTUBE_API_KEY=your-key-here`
+  - Or export as an environment variable before starting the backend: `export YOUTUBE_API_KEY='your-key-here'`
+- **Usage**: Used by `Backend/chrome_extension/server.js` to search YouTube for each AI recommendation and attach a `youtube_id` so the extension can play it
+- **Quota**: The free tier is 10,000 units/day. A search costs 100 units, so you get ~100 fresh recommendation fetches per day. Results are cached in-memory per server run.
+- **Note**: If the key is not set, recommendations are still generated but won't have `youtube_id`s, and the extension will show "no playable tracks."
 
 ## Setup Instructions
 
@@ -280,121 +273,38 @@ Notes:
 - The agent only reads local files and does not modify them.
 - If the directory does not exist or no matching files are found, `text` will be an empty string.
 
-### Spotify Premium Playback Integration
+### YouTube Audio Playback
 
-The extension includes Spotify Premium playback integration that uses AI to generate music recommendations based on scraped content.
+The extension plays AI-recommended music through a hidden YouTube IFrame Player embedded in the extension popup. There is no per-user setup — once the backend has a `YOUTUBE_API_KEY` configured, anyone using the extension just clicks "Play Recommendations" and audio starts.
 
-#### Prerequisites
+#### How it works
 
-- **Spotify Premium Account**: The Web Playback SDK requires a Spotify Premium subscription
-- **Spotify Developer App**: You need to create a Spotify app to get a Client ID
-
-#### Setting Up Spotify Developer App
-
-1. **Create a Spotify App:**
-   - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-   - Log in with your Spotify account
-   - Click "Create an app"
-   - Fill in the app details:
-     - App name: "Superior Reading Extension" (or any name you prefer)
-     - App description: "Chrome extension for content-based music recommendations"
-     - Redirect URI: You'll add this in the next step
-   - Accept the terms and click "Save"
-
-2. **Get Your Client ID:**
-   - After creating the app, you'll see your **Client ID**
-   - Copy this Client ID
-
-3. **Configure Redirect URI:**
-   - In your Spotify app settings, click "Edit Settings"
-   - You need to add a redirect URI for Chrome extensions
-   - First, load the extension in Chrome (see Chrome Extension Setup section)
-   - Open the extension popup and check the browser console, or:
-   - The redirect URI format is: `https://<extension-id>.chromiumapp.org/`
-   - To find your extension ID:
-     - Go to `chrome://extensions/`
-     - Find "Superior Reading - Content Scraper"
-     - Copy the ID shown (e.g., `abcdefghijklmnopqrstuvwxyz123456`)
-     - Your redirect URI will be: `https://abcdefghijklmnopqrstuvwxyz123456.chromiumapp.org/`
-   - Add this exact URI to your Spotify app's "Redirect URIs" list
-   - Click "Add" and then "Save"
-
-4. **Configure the Extension:**
-   - Open `Frontend/chrome_extension/spotify_auth.js`
-   - Find the line: `clientId: '2d35b413966c45379815f8d6aa664e67'`
-   - Replace the Client ID with your own Client ID from step 2
-   - Save the file
-
-#### Required Spotify Scopes
-
-The extension requests the following scopes (configured automatically):
-- `streaming` - Required for Web Playback SDK
-- `user-modify-playback-state` - Control playback
-- `user-read-playback-state` - Read current playback state
-- `user-read-email` - Read user email (optional)
-- `user-read-private` - Read user profile (optional)
+1. The Python AI agent analyzes scraped content and produces a list of recommendations, each with a YouTube-friendly `search_query`.
+2. The Node backend (`server.js`) calls the YouTube Data API v3 once per recommendation, filters to embeddable videos, and attaches a `youtube_id` to each rec.
+3. The Chrome extension receives the recs, filters to those with a `youtube_id`, and posts them to a sandboxed iframe (`youtube_sandbox.html`).
+4. The sandbox loads the YouTube IFrame Player API, plays the first video, and auto-advances to the next when each ends.
+5. The iframe is sized to 1×1 px and positioned off-screen — only audio is heard.
 
 #### Using Music Recommendations
 
-1. **Scrape Content:**
-   - Navigate to any webpage
-   - The extension will automatically scrape the content, or click "Scrape Current Page"
-
-2. **Get Recommendations:**
-   - Click the "Play Recommendations" button in the extension popup
-   - The extension will:
-     - Fetch the latest scraped content
-     - Send it to the AI agent for analysis
-     - Generate music recommendations based on theme and mood
-     - Search Spotify for matching tracks
-
-3. **Connect to Spotify:**
-   - If not already connected, click "Connect to Spotify" in the player section
-   - Authorize the extension with your Spotify Premium account
-   - The player will initialize automatically
-
-4. **Play Music:**
-   - Once recommendations are generated and you're connected to Spotify
-   - The recommended tracks will start playing automatically
-   - Use the player controls (play/pause, next, previous) to control playback
+1. **Scrape Content:** Navigate to any webpage. The extension scrapes automatically, or click "Scrape Current Page".
+2. **Play Recommendations:** Open the popup and click "Play Recommendations". The backend generates recs and resolves them to YouTube IDs. Playback starts in the popup (or via the dedicated player page if you keep it open).
+3. **Controls:** Play/pause, next, and previous buttons live in the popup.
 
 #### Test Mode (Preset Recommendations)
 
-To test the extension without using OpenAI tokens, you can use preset recommendations:
+To test without spending OpenAI tokens:
 
-1. **Enable Test Mode:**
-   - Open the extension popup
-   - In the settings section, toggle "Test Mode (Preset)" to ON
-   - This will use preset recommendations instead of AI-generated ones
+1. **Enable Test Mode:** Toggle "Test Mode (Preset)" in the popup.
+2. **What it does:** The extension fetches from `Backend/chrome_extension/preset_recommendations.json` — five classic tracks (Bohemian Rhapsody, Stairway to Heaven, Hotel California, Comfortably Numb, The Sound of Silence). The backend still resolves their `search_query` strings to YouTube IDs (cached after the first call).
+3. **Customizing presets:** Edit `Backend/chrome_extension/preset_recommendations.json`. Each entry needs at minimum `title`, `artist`, `match_reason`, and a `search_query`. If you want to skip the YouTube search entirely, you can pre-populate `youtube_id` directly — the server skips lookup for any entry that already has one.
 
-2. **Using Preset Recommendations:**
-   - With test mode enabled, click "Play Recommendations"
-   - The extension will fetch preset recommendations from `Backend/chrome_extension/preset_recommendations.json`
-   - These include 5 classic tracks with valid Spotify IDs:
-     - Bohemian Rhapsody - Queen
-     - Stairway to Heaven - Led Zeppelin
-     - Hotel California - Eagles
-     - Comfortably Numb - Pink Floyd
-     - The Sound of Silence - Simon & Garfunkel
+#### Troubleshooting
 
-3. **Customizing Preset Recommendations:**
-   - Edit `Backend/chrome_extension/preset_recommendations.json`
-   - Add or modify tracks with valid Spotify IDs
-   - The file follows the same structure as AI-generated recommendations
-   - Ensure each track has a `spotify_id` field for playback to work
-
-**Note:** Test mode is useful for:
-- Testing the extension without consuming OpenAI API tokens
-- Verifying Spotify playback functionality
-- Development and debugging
-
-#### Troubleshooting Spotify Integration
-
-- **"Authentication error"**: Check that your Client ID is correct in `spotify_auth.js`
-- **"Redirect URI mismatch"**: Ensure the redirect URI in Spotify app matches exactly (including trailing slash)
-- **"Account error"**: Verify you have a Spotify Premium subscription
-- **"No tracks found"**: The AI may not have found matching Spotify tracks. Try scraping different content
-- **"Device not found"**: The player may not be ready. Wait a few seconds and try again
+- **"No playable tracks"**: The backend couldn't attach `youtube_id`s. Check that `YOUTUBE_API_KEY` is set in `Backend/AI Agent/.env` and that the YouTube Data API v3 is enabled in your Google Cloud project.
+- **"YouTube error code 101/150"**: The video found doesn't allow embedding. The sandbox auto-advances; if it keeps happening, the AI search query is too narrow — re-scrape different content.
+- **Quota exceeded**: Free tier is 10k units/day. The in-memory cache deduplicates repeated queries within a single server run but resets on restart.
+- **No audio**: Check that you're not muted at the system or browser tab level. The player runs hidden, so there's nothing to click to confirm it's loaded — open the popup and watch the player status text.
 
 ## Security Notes
 
