@@ -2,12 +2,15 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs-extra');
 const path = require('path');
-const moment = require('moment');
 const { spawn } = require('child_process');
 
-// Load .env from Backend/AI Agent so the same key file feeds both Python and Node
+// Load .env from Backend/AI Agent or the project root so the same key file
+// feeds both Python and Node. dotenv never overrides vars that are already set,
+// so the AI Agent copy wins if both exist.
 try {
-    require('dotenv').config({ path: path.join(__dirname, '..', 'AI Agent', '.env') });
+    const dotenv = require('dotenv');
+    dotenv.config({ path: path.join(__dirname, '..', 'AI Agent', '.env') });
+    dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
 } catch (_) {
     // dotenv is optional; env vars can be exported in the shell instead
 }
@@ -87,38 +90,61 @@ const CLEANUP_CONFIG = {
     cleanupIntervalMinutes: 1 // Run cleanup every 1 minute
 };
 
+// Format a date as "YYYY-MM-DD_HH-mm-ss" in local time for use in filenames
+function formatTimestampForFilename(date = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    const dateStr = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    const timeStr = `${pad(date.getHours())}-${pad(date.getMinutes())}-${pad(date.getSeconds())}`;
+    return `${dateStr}_${timeStr}`;
+}
+
+// List scraped JSON files in dataDir with their stats (excludes the summary file)
+async function listScrapedFiles() {
+    const files = await fs.readdir(dataDir);
+    const jsonFiles = files.filter(file =>
+        file.endsWith('.json') &&
+        file !== 'scraping_summary.json'
+    );
+
+    return Promise.all(
+        jsonFiles.map(async (file) => {
+            const filePath = path.join(dataDir, file);
+            const stats = await fs.stat(filePath);
+            return {
+                filename: file,
+                filePath,
+                size: stats.size,
+                created: stats.birthtime,
+                modified: stats.mtime
+            };
+        })
+    );
+}
+
+// Resolve a client-supplied filename to a path inside dataDir.
+// Returns null if the name would escape the directory (path traversal).
+function resolveDataFile(filename) {
+    const resolved = path.resolve(dataDir, filename);
+    if (path.dirname(resolved) !== path.resolve(dataDir)) {
+        return null;
+    }
+    return resolved;
+}
+
 // Automatic cleanup function - deletes all files after 1 minute
 async function cleanupOldFiles() {
     if (!CLEANUP_CONFIG.enabled) return;
-    
+
     try {
         console.log('🧹 Starting automatic cleanup...');
-        
-        const files = await fs.readdir(dataDir);
-        const jsonFiles = files.filter(file => 
-            file.endsWith('.json') && 
-            file !== 'scraping_summary.json'
-        );
-        
-        if (jsonFiles.length === 0) {
+
+        const fileStats = await listScrapedFiles();
+
+        if (fileStats.length === 0) {
             console.log('📁 No files to clean up');
             return;
         }
-        
-        // Get file stats and check age
-        const fileStats = await Promise.all(
-            jsonFiles.map(async (file) => {
-                const filePath = path.join(dataDir, file);
-                const stats = await fs.stat(filePath);
-                return {
-                    filename: file,
-                    filePath: filePath,
-                    created: stats.birthtime,
-                    size: stats.size
-                };
-            })
-        );
-        
+
         const now = new Date();
         const maxAge = CLEANUP_CONFIG.deleteAfterMinutes * 60 * 1000; // Convert to milliseconds
         let deletedCount = 0;
@@ -167,19 +193,27 @@ app.post('/api/scrape', async (req, res) => {
             });
         }
 
+        // Fall back to the URL's hostname when the client didn't send a domain
+        let resolvedDomain;
+        try {
+            resolvedDomain = domain || new URL(url).hostname;
+        } catch (_) {
+            return res.status(400).json({
+                error: 'Invalid url: could not determine domain'
+            });
+        }
+
         // Create filename based on domain and timestamp
-        const safeDomain = domain.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const dateStr = moment().format('YYYY-MM-DD');
-        const timeStr = moment().format('HH-mm-ss');
-        const filename = `${safeDomain}_${dateStr}_${timeStr}.json`;
-        
+        const safeDomain = resolvedDomain.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const filename = `${safeDomain}_${formatTimestampForFilename()}.json`;
+
         // Prepare data to save
         const scrapedData = {
             url,
             title: title || 'Untitled',
             content,
             timestamp: timestamp || new Date().toISOString(),
-            domain: domain || new URL(url).hostname,
+            domain: resolvedDomain,
             wordCount: wordCount || content.split(/\s+/).length,
             scrapedAt: new Date().toISOString(),
             fileSize: JSON.stringify({ content }).length
@@ -263,13 +297,19 @@ app.get('/api/summary', async (req, res) => {
         });
     }
 });
-//Test
 // Get specific scraped content
 app.get('/api/content/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
-        const filePath = path.join(dataDir, filename);
-        
+        const filePath = resolveDataFile(filename);
+
+        if (!filePath) {
+            return res.status(400).json({
+                error: 'Invalid filename',
+                filename
+            });
+        }
+
         if (await fs.pathExists(filePath)) {
             const content = await fs.readJson(filePath);
             res.json({ success: true, content });
@@ -291,25 +331,13 @@ app.get('/api/content/:filename', async (req, res) => {
 // List all scraped files
 app.get('/api/files', async (req, res) => {
     try {
-        const files = await fs.readdir(dataDir);
-        const jsonFiles = files.filter(file => file.endsWith('.json') && file !== 'scraping_summary.json');
-        
-        const fileList = await Promise.all(
-            jsonFiles.map(async (file) => {
-                const filePath = path.join(dataDir, file);
-                const stats = await fs.stat(filePath);
-                return {
-                    filename: file,
-                    size: stats.size,
-                    created: stats.birthtime,
-                    modified: stats.mtime
-                };
-            })
-        );
+        const fileList = await listScrapedFiles();
 
-        res.json({ 
-            success: true, 
-            files: fileList.sort((a, b) => b.created - a.created) 
+        res.json({
+            success: true,
+            files: fileList
+                .map(({ filename, size, created, modified }) => ({ filename, size, created, modified }))
+                .sort((a, b) => b.created - a.created)
         });
     } catch (error) {
         console.error('Error listing files:', error);
@@ -324,8 +352,15 @@ app.get('/api/files', async (req, res) => {
 app.delete('/api/content/:filename', async (req, res) => {
     try {
         const { filename } = req.params;
-        const filePath = path.join(dataDir, filename);
-        
+        const filePath = resolveDataFile(filename);
+
+        if (!filePath) {
+            return res.status(400).json({
+                error: 'Invalid filename',
+                filename
+            });
+        }
+
         if (await fs.pathExists(filePath)) {
             await fs.remove(filePath);
             console.log(`🗑️ Deleted file: ${filename}`);
@@ -365,37 +400,172 @@ app.post('/api/cleanup', async (req, res) => {
 // Helper function to find the latest scraped file
 async function findLatestScrapedFile() {
     try {
-        const files = await fs.readdir(dataDir);
-        const jsonFiles = files.filter(file => 
-            file.endsWith('.json') && 
-            file !== 'scraping_summary.json'
-        );
-        
-        if (jsonFiles.length === 0) {
+        const fileStats = await listScrapedFiles();
+
+        if (fileStats.length === 0) {
             return null;
         }
-        
-        // Get file stats and find the most recently modified
-        const fileStats = await Promise.all(
-            jsonFiles.map(async (file) => {
-                const filePath = path.join(dataDir, file);
-                const stats = await fs.stat(filePath);
-                return {
-                    filename: file,
-                    filePath: filePath,
-                    modified: stats.mtime
-                };
-            })
-        );
-        
+
         // Sort by modification time (most recent first)
         fileStats.sort((a, b) => b.modified - a.modified);
-        
+
         return fileStats[0].filePath;
     } catch (error) {
         console.error('Error finding latest scraped file:', error);
         return null;
     }
+}
+
+// Locate a Python interpreter: prefer a venv next to the agent, then the
+// project-root .venv, then whatever is on PATH.
+function resolvePythonCommand() {
+    const projectRoot = path.join(__dirname, '..', '..');
+    const venvLocations = process.platform === 'win32'
+        ? [
+            path.join(__dirname, '..', 'AI Agent', 'venv', 'Scripts', 'python.exe'),
+            path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
+        ]
+        : [
+            path.join(__dirname, '..', 'AI Agent', 'venv', 'bin', 'python3'),
+            path.join(projectRoot, '.venv', 'bin', 'python3')
+        ];
+
+    for (const venvPython of venvLocations) {
+        if (fs.existsSync(venvPython)) {
+            console.log(`Using venv Python: ${venvPython}`);
+            return venvPython;
+        }
+    }
+
+    const fallback = process.platform === 'win32' ? 'python' : 'python3';
+    console.log(`Venv Python not found, using system ${fallback}`);
+    console.log(`Checked locations: ${venvLocations.join(', ')}`);
+    return fallback;
+}
+
+const PYTHON_AGENT_TIMEOUT_MS = 5 * 60 * 1000;
+
+// Run the Python agent with the given content on stdin and return its parsed
+// JSON output. Rejects on spawn failure, timeout, non-zero exit, or
+// unparseable output; rejection errors carry a `details` object for the API
+// response.
+function runPythonAgent(content) {
+    const pythonScriptDir = path.join(__dirname, '..', 'AI Agent');
+    const pythonScriptPath = path.join(pythonScriptDir, 'run_agent_cli.py');
+    const pythonCommand = resolvePythonCommand();
+
+    return new Promise((resolve, reject) => {
+        console.log('🚀 Starting Python agent process...');
+        console.log(`   Command: ${pythonCommand}`);
+        console.log(`   Script: ${pythonScriptPath}`);
+        console.log(`   Content length: ${content.length} characters`);
+
+        const pythonProcess = spawn(pythonCommand, [pythonScriptPath], {
+            cwd: pythonScriptDir,
+            stdio: ['pipe', 'pipe', 'pipe'],
+            env: {
+                ...process.env, // Pass through all environment variables (including .env)
+                PYTHONUNBUFFERED: '1' // Ensure Python output is not buffered
+            }
+        });
+
+        let stdout = '';
+        let stderr = '';
+        let timedOut = false;
+
+        const timeout = setTimeout(() => {
+            timedOut = true;
+            console.error('⏱️ Python process timeout after 5 minutes');
+            pythonProcess.kill('SIGTERM');
+        }, PYTHON_AGENT_TIMEOUT_MS);
+
+        // Send content to Python process via stdin
+        pythonProcess.stdin.write(content, 'utf8');
+        pythonProcess.stdin.end();
+
+        pythonProcess.stdout.on('data', (data) => {
+            stdout += data.toString();
+        });
+
+        pythonProcess.stderr.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        pythonProcess.on('error', (error) => {
+            clearTimeout(timeout);
+            console.error('Error spawning Python process:', error);
+            const err = new Error(error.message);
+            err.details = {
+                hint: 'Make sure Python 3 is installed and accessible as "python3"'
+            };
+            reject(err);
+        });
+
+        pythonProcess.on('close', (code, signal) => {
+            clearTimeout(timeout);
+
+            if (timedOut) {
+                const err = new Error('The Python agent process took too long to complete (>5 minutes)');
+                err.details = { code, signal, hint: 'Process was terminated (timeout).' };
+                reject(err);
+                return;
+            }
+
+            if (code !== 0) {
+                console.error(`❌ Python process exited with code ${code}${signal ? ` (signal: ${signal})` : ''}`);
+                console.error('Python stderr:', stderr);
+                console.error('Python stdout (if any):', stdout);
+
+                // The CLI prints a JSON error object on failure when it can
+                let message = stderr || 'Python agent process failed';
+                try {
+                    const errorJson = JSON.parse(stdout);
+                    if (errorJson.error) {
+                        message = errorJson.error;
+                    }
+                } catch (_) {
+                    // Not JSON, use stderr or default message
+                }
+
+                const err = new Error(message);
+                err.details = {
+                    code,
+                    signal,
+                    stderr: stderr.substring(0, 500),
+                    hint: code === 127 ? 'Python interpreter not found. Make sure Python 3 and dependencies are installed.' :
+                          code === 1 ? 'Python script execution failed. Check dependencies and environment variables.' :
+                          signal === 'SIGTERM' ? 'Process was terminated (likely timeout).' :
+                          'Check Python script and dependencies.'
+                };
+                reject(err);
+                return;
+            }
+
+            try {
+                // Extract the JSON object in case the script printed extra text
+                let cleanedStdout = stdout.trim();
+                const firstBrace = cleanedStdout.indexOf('{');
+                const lastBrace = cleanedStdout.lastIndexOf('}');
+
+                if (firstBrace !== -1 && lastBrace > firstBrace) {
+                    cleanedStdout = cleanedStdout.substring(firstBrace, lastBrace + 1);
+                }
+
+                resolve(JSON.parse(cleanedStdout));
+            } catch (parseError) {
+                console.error('❌ Error parsing Python output:', parseError);
+                console.error('Python stdout:', stdout);
+                console.error('Python stderr:', stderr);
+                const err = new Error('Invalid JSON response from Python agent');
+                err.details = {
+                    details: parseError.message,
+                    stdout: stdout.substring(0, 500),
+                    stderr: stderr.substring(0, 500)
+                };
+                reject(err);
+            }
+        });
+    });
 }
 
 // Get latest recommendations endpoint
@@ -448,188 +618,31 @@ app.get('/api/recommendations/latest', async (req, res) => {
             });
         }
         
-        // Path to the Python CLI script
-        const pythonScriptPath = path.join(__dirname, '..', 'AI Agent', 'run_agent_cli.py');
-        const pythonScriptDir = path.join(__dirname, '..', 'AI Agent');
-        
-        // Try to use venv Python interpreter, fallback to system python
-        // Check both possible venv locations:
-        // 1. Backend/AI Agent/venv/ (preferred)
-        // 2. .venv in project root (alternative)
-        const projectRoot = path.join(__dirname, '..', '..');
-        const venvLocations = [
-            // First try: venv in AI Agent directory
-            process.platform === 'win32' 
-                ? path.join(__dirname, '..', 'AI Agent', 'venv', 'Scripts', 'python.exe')
-                : path.join(__dirname, '..', 'AI Agent', 'venv', 'bin', 'python3'),
-            // Second try: .venv in project root
-            process.platform === 'win32' 
-                ? path.join(projectRoot, '.venv', 'Scripts', 'python.exe')
-                : path.join(projectRoot, '.venv', 'bin', 'python3')
-        ];
-        
-        // Check if venv Python exists, otherwise use system python
-        // On Windows, use 'python', on Mac/Linux use 'python3'
-        let pythonCommand = process.platform === 'win32' ? 'python' : 'python3';
-        let pythonArgs = [pythonScriptPath];
-        
+        // Run the Python agent on the scraped content
+        let result;
         try {
-            let venvFound = false;
-            for (const venvPython of venvLocations) {
-                if (fs.existsSync(venvPython)) {
-                    pythonCommand = venvPython;
-                    console.log(`Using venv Python: ${pythonCommand}`);
-                    venvFound = true;
-                    break;
-                }
-            }
-            
-            if (!venvFound) {
-                console.log(`Venv Python not found in any of the checked locations, using system ${pythonCommand}`);
-                console.log(`Checked locations: ${venvLocations.join(', ')}`);
-            }
-        } catch (err) {
-            console.warn(`Could not check for venv Python, using system ${pythonCommand}:`, err.message);
+            result = await runPythonAgent(content);
+        } catch (agentError) {
+            return res.status(500).json({
+                error: 'Failed to generate recommendations',
+                message: agentError.message,
+                ...(agentError.details || {})
+            });
         }
-        
-        // Spawn Python process to run the agent
-        return new Promise((resolve, reject) => {
-            console.log(`🚀 Starting Python agent process...`);
-            console.log(`   Command: ${pythonCommand}`);
-            console.log(`   Script: ${pythonScriptPath}`);
-            console.log(`   Content length: ${content.length} characters`);
-            
-            const pythonProcess = spawn(pythonCommand, pythonArgs, {
-                cwd: pythonScriptDir,
-                stdio: ['pipe', 'pipe', 'pipe'],
-                env: {
-                    ...process.env, // Pass through all environment variables (including .env)
-                    PYTHONUNBUFFERED: '1' // Ensure Python output is not buffered
-                }
-            });
-            
-            let stdout = '';
-            let stderr = '';
-            
-            // Set a timeout for the Python process (5 minutes)
-            const timeout = setTimeout(() => {
-                if (!pythonProcess.killed) {
-                    console.error('⏱️ Python process timeout after 5 minutes');
-                    pythonProcess.kill('SIGTERM');
-                    res.status(500).json({ 
-                        error: 'Python agent timeout',
-                        message: 'The Python agent process took too long to complete (>5 minutes)'
-                    });
-                    resolve();
-                }
-            }, 5 * 60 * 1000);
-            
-            // Send content to Python process via stdin
-            pythonProcess.stdin.write(content, 'utf8');
-            pythonProcess.stdin.end();
-            
-            // Collect stdout
-            pythonProcess.stdout.on('data', (data) => {
-                stdout += data.toString();
-            });
-            
-            // Collect stderr
-            pythonProcess.stderr.on('data', (data) => {
-                stderr += data.toString();
-            });
-            
-            // Handle process completion
-            pythonProcess.on('close', async (code, signal) => {
-                clearTimeout(timeout); // Clear the timeout
-                
-                if (code !== 0) {
-                    console.error(`❌ Python process exited with code ${code}${signal ? ` (signal: ${signal})` : ''}`);
-                    console.error('Python stderr:', stderr);
-                    console.error('Python stdout (if any):', stdout);
-                    
-                    // Try to parse error from stdout if it's JSON
-                    let errorDetails = stderr || 'Python agent process failed';
-                    try {
-                        const errorJson = JSON.parse(stdout);
-                        if (errorJson.error) {
-                            errorDetails = errorJson.error;
-                        }
-                    } catch (e) {
-                        // Not JSON, use stderr or default message
-                    }
-                    
-                    res.status(500).json({ 
-                        error: 'Failed to generate recommendations',
-                        message: errorDetails,
-                        code: code,
-                        signal: signal,
-                        stderr: stderr.substring(0, 500), // Limit stderr length
-                        hint: code === 127 ? 'Python interpreter not found. Make sure Python 3 and dependencies are installed.' : 
-                              code === 1 ? 'Python script execution failed. Check dependencies and environment variables.' :
-                              signal === 'SIGTERM' ? 'Process was terminated (likely timeout).' :
-                              'Check Python script and dependencies.'
-                    });
-                    resolve(); // Resolve after sending error response
-                    return;
-                }
-                
-                try {
-                    // Clean stdout - remove any leading/trailing whitespace and extract JSON
-                    let cleanedStdout = stdout.trim();
 
-                    // Try to find JSON object in the output (in case there's extra text)
-                    // Look for the first { and last } to extract JSON
-                    const firstBrace = cleanedStdout.indexOf('{');
-                    const lastBrace = cleanedStdout.lastIndexOf('}');
+        if (result?.music_recommendations?.recommendations) {
+            result.music_recommendations.recommendations = await attachYouTubeIds(
+                result.music_recommendations.recommendations
+            );
+        }
 
-                    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-                        cleanedStdout = cleanedStdout.substring(firstBrace, lastBrace + 1);
-                    }
-
-                    // Parse JSON response from Python
-                    const result = JSON.parse(cleanedStdout);
-
-                    if (result?.music_recommendations?.recommendations) {
-                        result.music_recommendations.recommendations = await attachYouTubeIds(
-                            result.music_recommendations.recommendations
-                        );
-                    }
-
-                    // Return the music_recommendations
-                    console.log('✅ Successfully generated recommendations');
-                    res.json({
-                        success: true,
-                        ...result,
-                        sourceFile: path.basename(latestFile)
-                    });
-                    resolve(); // Resolve after sending success response
-                } catch (parseError) {
-                    console.error('❌ Error parsing Python output:', parseError);
-                    console.error('Python stdout:', stdout);
-                    console.error('Python stderr:', stderr);
-                    res.status(500).json({ 
-                        error: 'Failed to parse recommendations',
-                        message: 'Invalid JSON response from Python agent',
-                        details: parseError.message,
-                        stdout: stdout.substring(0, 500), // Limit stdout length
-                        stderr: stderr.substring(0, 500)  // Limit stderr length
-                    });
-                    resolve(); // Resolve after sending error response
-                }
-            });
-            
-            // Handle process errors
-            pythonProcess.on('error', (error) => {
-                console.error('Error spawning Python process:', error);
-                res.status(500).json({ 
-                    error: 'Failed to start Python agent',
-                    message: error.message,
-                    hint: 'Make sure Python 3 is installed and accessible as "python3"'
-                });
-                resolve(); // Resolve after sending error response
-            });
+        console.log('✅ Successfully generated recommendations');
+        res.json({
+            success: true,
+            ...result,
+            sourceFile: path.basename(latestFile)
         });
-        
+
     } catch (error) {
         console.error('Error in recommendations endpoint:', error);
         res.status(500).json({ 

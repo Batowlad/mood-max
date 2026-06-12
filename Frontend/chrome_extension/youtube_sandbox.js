@@ -1,17 +1,7 @@
 // YouTube IFrame Player sandbox.
 // Loaded inside a sandboxed extension page. Communicates with the parent via postMessage.
 
-const MESSAGE_TYPES = {
-    INIT_PLAYER: 'init_player',
-    LOAD_QUEUE: 'load_queue',
-    PLAY: 'play',
-    PAUSE: 'pause',
-    NEXT: 'next',
-    PREV: 'prev',
-    PLAYER_READY: 'player_ready',
-    PLAYER_ERROR: 'player_error',
-    PLAYER_STATE: 'player_state'
-};
+// MESSAGE_TYPES comes from messages.js, loaded before this script
 
 let player = null;
 let apiReady = false;
@@ -124,6 +114,8 @@ async function initialize() {
 }
 
 window.addEventListener('message', (event) => {
+    // Only accept commands from the embedding extension page
+    if (event.source !== window.parent) return;
     const message = event.data;
     if (!message || !message.type) return;
     if (!Object.values(MESSAGE_TYPES).includes(message.type)) return;

@@ -9,17 +9,7 @@ const nextBtn = document.getElementById('nextBtn');
 const prevBtn = document.getElementById('prevBtn');
 const sandboxFrame = document.getElementById('sandboxFrame');
 
-const MESSAGE_TYPES = {
-    INIT_PLAYER: 'init_player',
-    LOAD_QUEUE: 'load_queue',
-    PLAY: 'play',
-    PAUSE: 'pause',
-    NEXT: 'next',
-    PREV: 'prev',
-    PLAYER_READY: 'player_ready',
-    PLAYER_ERROR: 'player_error',
-    PLAYER_STATE: 'player_state'
-};
+// MESSAGE_TYPES comes from messages.js, loaded before this script
 
 let isPlayerReady = false;
 let isPlaying = false;
@@ -65,6 +55,8 @@ function playRecommendations(recommendations) {
 }
 
 window.addEventListener('message', (event) => {
+    // Only accept messages from our own sandbox iframe
+    if (event.source !== sandboxFrame.contentWindow) return;
     const message = event.data;
     if (!message || !message.type) return;
     if (!Object.values(MESSAGE_TYPES).includes(message.type)) return;

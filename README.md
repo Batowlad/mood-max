@@ -37,6 +37,7 @@ Superior Reading/
 │       ├── popup.js                   # Popup functionality
 │       ├── player.html                # Standalone player page
 │       ├── player.js                  # Standalone player logic
+│       ├── messages.js                # Shared postMessage type constants
 │       ├── youtube_sandbox.html       # Sandboxed YouTube IFrame Player host
 │       ├── youtube_sandbox.js         # YouTube IFrame Player wiring
 │       └── icons/
@@ -71,7 +72,7 @@ Before setting up the application, you'll need to obtain the following API keys 
   5. Copy the API key (you won't be able to see it again)
 - **Where to set**: 
   - Set as an environment variable: `export OPENAI_API_KEY='your-key-here'`
-  - Or create a `.env` file in the `Backend/AI Agent/` directory with: `OPENAI_API_KEY=your-key-here`
+  - Or create a `.env` file in the project root (or in `Backend/AI Agent/`) with: `OPENAI_API_KEY=your-key-here`
 - **Usage**: Used by `ai_agent.py` for analyzing scraped content and generating music recommendations
 
 #### YouTube Data API Key
@@ -84,7 +85,7 @@ Before setting up the application, you'll need to obtain the following API keys 
   4. Create an API key under "APIs & Services → Credentials → Create credentials → API key"
   5. (Optional but recommended) Restrict the key to the YouTube Data API v3
 - **Where to set**:
-  - Add to `.env` file in `Backend/AI Agent/` directory: `YOUTUBE_API_KEY=your-key-here`
+  - Add to the `.env` file in the project root (or in `Backend/AI Agent/`): `YOUTUBE_API_KEY=your-key-here`
   - Or export as an environment variable before starting the backend: `export YOUTUBE_API_KEY='your-key-here'`
 - **Usage**: Used by `Backend/chrome_extension/server.js` to search YouTube for each AI recommendation and attach a `youtube_id` so the extension can play it
 - **Quota**: The free tier is 10,000 units/day. A search costs 100 units, so you get ~100 fresh recommendation fetches per day. Results are cached in-memory per server run.
@@ -301,7 +302,7 @@ To test without spending OpenAI tokens:
 
 #### Troubleshooting
 
-- **"No playable tracks"**: The backend couldn't attach `youtube_id`s. Check that `YOUTUBE_API_KEY` is set in `Backend/AI Agent/.env` and that the YouTube Data API v3 is enabled in your Google Cloud project.
+- **"No playable tracks"**: The backend couldn't attach `youtube_id`s. Check that `YOUTUBE_API_KEY` is set in the `.env` file (project root or `Backend/AI Agent/`) and that the YouTube Data API v3 is enabled in your Google Cloud project.
 - **"YouTube error code 101/150"**: The video found doesn't allow embedding. The sandbox auto-advances; if it keeps happening, the AI search query is too narrow — re-scrape different content.
 - **Quota exceeded**: Free tier is 10k units/day. The in-memory cache deduplicates repeated queries within a single server run but resets on restart.
 - **No audio**: Check that you're not muted at the system or browser tab level. The player runs hidden, so there's nothing to click to confirm it's loaded — open the popup and watch the player status text.

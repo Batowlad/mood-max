@@ -4,19 +4,26 @@ import re
 import os
 import sys
 from typing import Optional, TypedDict, List, Dict, Any
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+from dotenv import load_dotenv
+from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
+from langchain_core.messages import SystemMessage, HumanMessage
+from langgraph.graph import StateGraph, END
+
+_AGENT_DIR = Path(__file__).resolve().parent
+
+# Load environment variables from this directory or the project root.
+# load_dotenv never overrides vars that are already set, so the local copy wins.
+load_dotenv(_AGENT_DIR / ".env")
+load_dotenv(_AGENT_DIR.parent.parent / ".env")
 
 
 # Directory containing scraped JSON files, resolved relative to this file
-SCRAPED_DATA_DIR: Path = (
-    Path(__file__).resolve().parent.parent / "chrome_extension" / "scraped_data"
-)
+SCRAPED_DATA_DIR: Path = _AGENT_DIR.parent / "chrome_extension" / "scraped_data"
 
-# Accepts filenames like "@_2025-09-18_19-44-17.json" or "_2025-09-18_19-44-17.json"
-FILENAME_REGEX = re.compile(r"^@?_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$")
+# Matches filenames the server writes, e.g. "en.wikipedia.org_2025-09-18_19-44-17.json"
+FILENAME_REGEX = re.compile(r"^.+_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.json$")
 
 
 def _find_latest_scraped_file(directory: Path) -> Optional[Path]:
@@ -48,29 +55,31 @@ def _read_content_from_json(file_path: Path) -> str:
         return ""
 
 
-# Public variable: the text content of the most recent scraped file
-_latest_file: Optional[Path] = _find_latest_scraped_file(SCRAPED_DATA_DIR)
-page_content: str = _read_content_from_json(_latest_file) if _latest_file else ""
+def get_latest_page_content() -> str:
+    """Return the text content of the most recent scraped file, or empty string."""
+    latest_file = _find_latest_scraped_file(SCRAPED_DATA_DIR)
+    return _read_content_from_json(latest_file) if latest_file else ""
 
 
-from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
-from langchain_core.messages import SystemMessage, HumanMessage
-from langgraph.graph import StateGraph, END
+_llm: Optional[ChatOpenAI] = None
 
-# Initialize LLM - use environment variable if available
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# Initialize LLM (will be validated when first used)
-llm = None
-if OPENAI_API_KEY:
-    llm = ChatOpenAI(
-        model="gpt-4o",
-        temperature=0.3,
-        api_key=OPENAI_API_KEY
-    )
-else:
-    print("Warning: OPENAI_API_KEY not found. LLM operations will fail.", file=sys.stderr)
+def get_llm() -> ChatOpenAI:
+    """Return the shared LLM instance, creating it on first use."""
+    global _llm
+    if _llm is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "OPENAI_API_KEY not found. Set it in the environment or in a .env "
+                "file in the project root or Backend/AI Agent/."
+            )
+        _llm = ChatOpenAI(
+            model="gpt-4o",
+            temperature=0.3,
+            api_key=api_key
+        )
+    return _llm
 
 # Pydantic models for structured output
 class AnalysisResult(BaseModel):
@@ -247,7 +256,7 @@ def content_analyzer_node(state: AgentState) -> Dict[str, Any]:
     ]
 
     # Use structured output to get JSON response
-    result = llm.with_structured_output(AnalysisResult).invoke(messages)
+    result = get_llm().with_structured_output(AnalysisResult).invoke(messages)
 
     return {
         "analysis_result": {
@@ -273,7 +282,7 @@ def tag_node(state: AgentState) -> Dict[str, Any]:
     ]
 
     # Use structured output to get JSON response
-    result = llm.with_structured_output(TaggedResult).invoke(messages)
+    result = get_llm().with_structured_output(TaggedResult).invoke(messages)
 
     return {
         "tagged_result": {
@@ -297,7 +306,7 @@ def music_selector_node(state: AgentState) -> Dict[str, Any]:
         HumanMessage(content=prompt)
     ]
 
-    ai_recommendations = llm.with_structured_output(MusicRecommendations).invoke(messages)
+    ai_recommendations = get_llm().with_structured_output(MusicRecommendations).invoke(messages)
 
     recommendations = [
         {
@@ -346,20 +355,24 @@ music_agent_graph = build_music_agent_graph()
 
 def run_music_agent(content: Optional[str] = None) -> Dict[str, Any]:
     """
-    Run the music agent workflow with the given content or page_content.
+    Run the music agent workflow with the given content.
 
     Args:
-        content: Optional content to analyze. If None, uses page_content.
+        content: Optional content to analyze. If None, falls back to the most
+            recently scraped file's content.
 
     Returns:
         Final state with all results including music recommendations.
     """
-    input_content = content if content is not None else page_content
+    input_content = content if content is not None else get_latest_page_content()
 
     if not input_content:
         return {
-            "error": "No content provided. Please provide content or ensure page_content is set."
+            "error": "No content provided. Please provide content or scrape a page first."
         }
+
+    # Fail fast with a clear message if the API key is missing
+    get_llm()
 
     initial_state = {
         "page_content": input_content,

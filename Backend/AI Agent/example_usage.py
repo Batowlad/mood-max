@@ -5,17 +5,18 @@ This script demonstrates how to use the music agent to analyze content
 and get music recommendations.
 """
 
-from ai_agent import run_music_agent, page_content
+from ai_agent import run_music_agent, get_latest_page_content
 import json
 
 def main():
     """Run the music agent with example content."""
-    
-    # Example 1: Use the page_content from scraped files
+
+    # Example 1: Use the content from the most recent scraped file
     print("=" * 60)
-    print("Example 1: Using page_content from scraped files")
+    print("Example 1: Using content from scraped files")
     print("=" * 60)
-    
+
+    page_content = get_latest_page_content()
     if page_content:
         print(f"Found content ({len(page_content)} characters)")
         result = run_music_agent()
@@ -65,10 +66,8 @@ def main():
         for i, rec in enumerate(recommendations, 1):
             print(f"\n  {i}. {rec.get('title', 'Unknown')} - {rec.get('artist', 'Unknown')}")
             print(f"     Reason: {rec.get('match_reason', 'N/A')}")
-            if rec.get('spotify_url'):
-                print(f"     Spotify: {rec['spotify_url']}")
-            if rec.get('preview_url'):
-                print(f"     Preview: {rec['preview_url']}")
+            if rec.get('search_query'):
+                print(f"     YouTube search: {rec['search_query']}")
             print(f"     Source: {rec.get('source', 'unknown')}")
 
 if __name__ == "__main__":
