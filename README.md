@@ -1,4 +1,4 @@
-# Superior Reading - Chrome Extension
+# Mood-max - Chrome Extension
 
 A Chrome extension that automatically scrapes the main content of any web page, analyzes it with AI, and plays matching background music via YouTube — audio only, no video, no sign-in required for end users. The extension extracts the article, sends it to your local backend, uses AI to generate music recommendations based on theme and mood, then resolves each recommendation to a YouTube video and plays it through a hidden iframe in the extension popup.
 
